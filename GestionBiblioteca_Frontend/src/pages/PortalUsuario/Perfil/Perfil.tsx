@@ -52,10 +52,8 @@ const Perfil: React.FC = () => {
 
   const obtenerGruposDeMiCarrera = async (signal?: AbortSignal) => {
     try {
-      const token = sessionStorage.getItem('token');
       const response = await api.get('/usuario/grupos-carrera', {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: signal // Vincula la cancelación
+        signal: signal
       });
       if (Array.isArray(response.data)) {
         setGrupos(response.data);
@@ -98,11 +96,8 @@ const Perfil: React.FC = () => {
 
   const handleGuardarCambios = async () => {
     try {
-      const token = sessionStorage.getItem('token');
       const response = await api.put('/usuario/update-perfil', {
         telefono: telefono
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
 
       if (response.data.success) {

@@ -31,7 +31,7 @@ const Login: React.FC = () => {
 
       if (response.data.success) {
         if (response.data.es_nuevo) {
-          sessionStorage.setItem('datos_google_temporales', JSON.stringify(response.data.datos_google));
+          sessionStorage.setItem('registro_token', response.data.registro_token);
           window.location.href = '/completar-registro'; 
         } else {
           const usuario = response.data.usuario;

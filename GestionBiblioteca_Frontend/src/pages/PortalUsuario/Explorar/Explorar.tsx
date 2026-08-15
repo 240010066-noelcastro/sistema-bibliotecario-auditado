@@ -50,9 +50,7 @@ const Explorar: React.FC = () => {
     abortControllerRef.current = new AbortController();
 
     try {
-      const token = sessionStorage.getItem('token');
       const res = await api.get(`/catalogo?page=${page}&search=${search}&modulo=${modulo}&per_page=24`, {
-        headers: { Authorization: `Bearer ${token}` },
         signal: abortControllerRef.current.signal
       });
 
@@ -79,29 +77,22 @@ const Explorar: React.FC = () => {
       setUsuario(JSON.parse(userData));
     }
 
-    // 🚀 OPTIMIZACIÓN: AbortController primario para Laragon
     const initialAbort = new AbortController();
     let isMounted = true;
 
     const inicializarModulo = async () => {
       try {
-        const token = sessionStorage.getItem('token');
-        
-        // Carga de temas sin duplicar procesos de base de datos
         const resTemas = await api.get('/temas/buscar?all=1', {
-          headers: { Authorization: `Bearer ${token}` },
           signal: initialAbort.signal
         });
         if (resTemas.data?.success && isMounted) {
           setTemasBD(resTemas.data.data || []);
         }
 
-        // Carga inicial del catálogo
         const params = new URLSearchParams(window.location.search);
         const queryInit = params.get('search') || '';
         
         const resCat = await api.get(`/catalogo?page=1&search=${queryInit}&modulo=&per_page=24`, {
-          headers: { Authorization: `Bearer ${token}` },
           signal: initialAbort.signal
         });
 

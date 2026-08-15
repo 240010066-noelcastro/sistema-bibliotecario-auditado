@@ -30,10 +30,8 @@ const Historial: React.FC = () => {
 
     const cargarHistorial = async () => {
       try {
-        const token = sessionStorage.getItem('token');
         const res = await api.get('/usuario/prestamos-historial', { 
-          headers: { Authorization: `Bearer ${token}` },
-          signal: abortController.signal // 🏛️ Cancelación segura y estricta de Axios
+          signal: abortController.signal
         });
         if (res.data?.success && isMounted) {
           setHistorial(res.data.data || []);

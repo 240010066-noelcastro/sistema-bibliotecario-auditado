@@ -22,10 +22,8 @@ const MisPedidos: React.FC = () => {
 
     const cargarPedidosActivos = async () => {
       try {
-        const token = sessionStorage.getItem('token');
         const res = await api.get('/usuario/pedidos-activos', {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: abortController.signal // 🏛️ Vinculamos el token de cancelación
+          signal: abortController.signal
         });
         if (res.data?.success && isMounted) {
           setActivos(res.data.data || []);
@@ -43,7 +41,6 @@ const MisPedidos: React.FC = () => {
     };
     cargarPedidosActivos();
 
-    // 🏛️ Limpieza: Si el componente se desmonta o se duplica, cancela inmediatamente la petición previa
     return () => {
       isMounted = false;
       abortController.abort();

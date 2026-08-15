@@ -189,8 +189,7 @@ class RecursoCatalogoController extends Controller
               }
             }
 
-            // Re-inyectamos los items procesados a la paginación
-            if (!$request->has('all')) {
+            if (!($solicitaTodo && $esAdmin)) {
                 $datos->setCollection($items);
             }
 
@@ -465,8 +464,15 @@ class RecursoCatalogoController extends Controller
                 return null;
             }
 
-            // Límite de tamaño máximo: 2 MB
-            if (strlen($response->body()) > 2 * 1024 * 1024) {
+            // 1. Validar que la cabecera devuelta sea estrictamente una imagen
+            $contentType = $response->header('Content-Type', '');
+            if (!str_starts_with($contentType, 'image/')) {
+                return null;
+            }
+
+            // 2. Validar tamaño por Content-Length y por longitud real de bytes (Máx. 2 MB)
+            $contentLength = (int) $response->header('Content-Length', 0);
+            if ($contentLength > 2 * 1024 * 1024 || strlen($response->body()) > 2 * 1024 * 1024) {
                 return null;
             }
 

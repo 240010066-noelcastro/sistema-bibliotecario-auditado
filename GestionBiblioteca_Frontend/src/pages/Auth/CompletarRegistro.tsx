@@ -12,14 +12,14 @@ const CompletarRegistro: React.FC = () => {
   
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [datosGoogle, setDatosGoogle] = useState<any>(null);
+  const [tokenValido, setTokenValido] = useState(false);
   
   const [grupos, setGrupos] = useState<any[]>([]); 
 
   useEffect(() => {
-    const guardados = sessionStorage.getItem('datos_google_temporales');
-    if (guardados) {
-      setDatosGoogle(JSON.parse(guardados));
+    const registroToken = sessionStorage.getItem('registro_token');
+    if (registroToken) {
+      setTokenValido(true);
       cargarGrupos(); 
     } else {
       window.location.href = '/'; 
@@ -57,20 +57,26 @@ const CompletarRegistro: React.FC = () => {
     return setErrorMsg('El número de teléfono debe tener exactamente 10 dígitos.');
     }
 
+    const registroToken = sessionStorage.getItem('registro_token');
+    if (!registroToken) {
+      setErrorMsg('La sesión de registro expiró. Vuelve a iniciar con Google.');
+      setTimeout(() => { window.location.href = '/'; }, 2000);
+      return;
+    }
+
     setLoading(true);
     try {
-    const payload = {
-    ...datosGoogle,
-    matricula,
-    telefono,
-    grupo_id: grupoId ? grupoId : null
-    };
+      const payload = {
+        registro_token: registroToken,
+        matricula: matricula.trim(),
+        telefono: telefono.trim(),
+        grupo_id: grupoId ? parseInt(grupoId, 10) : null
+      };
 
       const response = await api.post('/completar-registro', payload);
 
       if (response.data.success) {
-        sessionStorage.removeItem('datos_google_temporales');
-        sessionStorage.setItem('token', response.data.token);
+        sessionStorage.removeItem('registro_token');
         sessionStorage.setItem('usuario', JSON.stringify(response.data.usuario));
         sessionStorage.setItem('rol', 'usuario'); 
         window.location.href = '/portal'; 
@@ -101,11 +107,11 @@ const CompletarRegistro: React.FC = () => {
   };
 
   const cancelarRegistro = () => {
-    sessionStorage.removeItem('datos_google_temporales');
+    sessionStorage.removeItem('registro_token');
     window.location.href = '/';
   };
 
-  if (!datosGoogle) return null; 
+  if (!tokenValido) return null;
 
   return (
     <IonPage>
@@ -136,7 +142,7 @@ const CompletarRegistro: React.FC = () => {
               </div>
 
               <h2 className="registro-title">Completa tu perfil</h2>
-              <p className="registro-subtitle">Hola, {datosGoogle.nombre}. Introduce tus datos.</p>
+              <p className="registro-subtitle">Introduce tus datos institucionales para finalizar tu registro.</p>
 
               {errorMsg && <div className="registro-alert">{errorMsg}</div>}
 

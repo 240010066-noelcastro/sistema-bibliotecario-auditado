@@ -21,9 +21,7 @@ const MiBiblioteca: React.FC = () => {
 
     const cargarFavoritos = async () => {
       try {
-        const token = sessionStorage.getItem('token');
         const res = await api.get('usuario/favoritos', {
-          headers: { Authorization: `Bearer ${token}` },
           signal: abortController.signal 
         });
         

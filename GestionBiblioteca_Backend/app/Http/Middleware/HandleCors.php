@@ -22,10 +22,8 @@ public function handle($request, Closure $next)
         $request->headers->set('Authorization', 'Bearer ' . $request->cookie('token'));
     }
 
-    // Lista de dominios autorizados leídos desde la configuración
-    $allowedOrigins = array_filter(
-        array_map('trim', explode(',', (string) env('CORS_ALLOWED_ORIGINS', '')))
-    );
+    // Lista de dominios autorizados leídos de forma segura desde config/cors.php
+    $allowedOrigins = config('cors.allowed_origins', []);
 
     if ($request->isMethod('OPTIONS')) {
         $response = response('', 200);

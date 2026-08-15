@@ -26,24 +26,18 @@ const DetalleRecurso: React.FC = () => {
 
     const cargarDatosFicha = async () => {
       try {
-        const token = sessionStorage.getItem('token');
-        
-        // 🏛️ OPTIMIZACIÓN DE CACHÉ: Verificamos si las configuraciones ya existen en el navegador
         const cacheConfig = sessionStorage.getItem('upve_config_catalogo');
         let configData = cacheConfig ? JSON.parse(cacheConfig) : null;
 
         const promises: Promise<any>[] = [
           api.get(`/usuario/recurso/${id}`, { 
-            headers: { Authorization: `Bearer ${token}` },
             signal: abortController.signal
           })
         ];
 
-        // Si no están en caché, las descargamos por única vez
         if (!configData) {
           promises.push(
             api.get('/configuraciones/Catalogo', { 
-              headers: { Authorization: `Bearer ${token}` },
               signal: abortController.signal
             })
           );
@@ -86,24 +80,21 @@ const DetalleRecurso: React.FC = () => {
 
     return () => {
       isMounted = false;
-      abortController.abort(); // Cancela llamadas colgadas al salir de la pantalla
+      abortController.abort(); 
     };
   }, [id]);
 
   const handleToggleFavorito = async () => {
     try {
-      const token = sessionStorage.getItem('token');
       const nuevoEstado = !isFavorito;
-      setIsFavorito(nuevoEstado); // UI Optimista: prende/apaga al instante sin esperar al servidor
+      setIsFavorito(nuevoEstado); 
 
       await api.post(`/usuario/recurso/${id}/favorito`, {
         favorito: nuevoEstado
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
       console.error("Error al guardar favorito:", err);
-      setIsFavorito(isFavorito); // Reversa el estado si hay un error real de red
+      setIsFavorito(isFavorito);
     }
   };
 

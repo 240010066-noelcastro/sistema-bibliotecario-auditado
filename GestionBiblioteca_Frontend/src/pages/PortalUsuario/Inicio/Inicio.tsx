@@ -31,9 +31,7 @@ const Inicio: React.FC = () => {
 
     const cargarDatosDashboard = async () => {
       try {
-        const token = sessionStorage.getItem('token');
         const response = await api.get('/usuario/dashboard-stats', {
-          headers: { Authorization: `Bearer ${token}` },
           signal: abortController.signal
         });
         

@@ -4,10 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\Usuario;
 use App\Enums\Rol;
+use Firebase\JWT\JWT;
+use Firebase\JWT\JWK;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -21,51 +24,73 @@ class AuthController extends Controller
         ]);
 
         try {
-            $response = Http::withoutVerifying()->get('https://oauth2.googleapis.com/tokeninfo', [
-            'id_token' => $request->credential,
-            ]);
+            $jwks = Cache::remember('google_jwks_certs', 60 * 60 * 24, function () {
+                $response = Http::timeout(5)->get('https://www.googleapis.com/oauth2/v3/certs');
+                return $response->json();
+            });
 
-            if ($response->failed()) {
+            if (!$jwks) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Token de Google inválido o expirado.',
+                    'message' => 'No fue posible validar las llaves de autenticación.'
+                ], 500);
+            }
+
+            $decoded = JWT::decode($request->credential, JWK::parseKeySet($jwks));
+            $payload = (array) $decoded;
+
+            $validIssuers = ['accounts.google.com', 'https://accounts.google.com'];
+            $clientId = config('services.google.client_id', env('GOOGLE_CLIENT_ID'));
+            $allowedDomain = config('services.google.workspace_domain', env('GOOGLE_WORKSPACE_DOMAIN', 'upve.edu.mx'));
+
+            if (!in_array($payload['iss'] ?? '', $validIssuers, true) || ($payload['aud'] ?? '') !== $clientId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token institucional no válido o alterado.'
                 ], 401);
             }
 
-            $payload = $response->json();
-
-            $clientId = config('services.google.client_id');
-            $allowedDomain = config('services.google.workspace_domain');
-
-            if (
-                ($payload['aud'] ?? null) !== $clientId ||
-                empty($payload['email_verified']) ||
-                ($payload['hd'] ?? null) !== $allowedDomain
-            ) {
+            if (empty($payload['email_verified']) || ($payload['hd'] ?? null) !== $allowedDomain) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'La cuenta no pertenece al dominio institucional autorizado (@upve.edu.mx).',
+                    'message' => 'La cuenta no pertenece al dominio institucional autorizado (@upve.edu.mx).'
                 ], 403);
             }
 
-            $correo = $payload['email'];
+            $googleSub = $payload['sub'] ?? null;
+            $correo = $payload['email'] ?? '';
             $nombre = $payload['given_name'] ?? ($payload['name'] ?? '');
             $apellidoPaterno = $payload['family_name'] ?? '';
 
-            $usuarioBuscado = Usuario::where('CorreoElectronico', $correo)->first();
+            $usuarioBuscado = Usuario::where('GoogleSub', $googleSub)
+                ->orWhere('CorreoElectronico', $correo)
+                ->first();
 
             if (!$usuarioBuscado) {
-                return response()->json([
-                    'success' => true,
-                    'es_nuevo' => true,
-                    'message' => 'Correo institucional válido. Redirigiendo a completar registro.',
-                    'datos_google' => [
-                        'correo' => $correo,
-                        'nombre' => $nombre,
+                $registroToken = Str::random(64);
+
+                Cache::put(
+                    "registro-google:{$registroToken}",
+                    [
+                        'google_sub'       => $googleSub,
+                        'correo'           => $correo,
+                        'nombre'           => $nombre,
                         'apellido_paterno' => $apellidoPaterno,
-                        'apellido_materno' => ''
-                    ]
-                ]);
+                    ],
+                    now()->addMinutes(10)
+                );
+
+                return response()->json([
+                    'success'        => true,
+                    'es_nuevo'       => true,
+                    'registro_token' => $registroToken,
+                    'message'        => 'Correo verificado. Redirigiendo a completar registro.'
+                ], 200);
+            }
+
+            if (empty($usuarioBuscado->GoogleSub) && $googleSub) {
+                $usuarioBuscado->GoogleSub = $googleSub;
+                $usuarioBuscado->save();
             }
 
             if (isset($usuarioBuscado->EstadoCuenta) && $usuarioBuscado->EstadoCuenta !== 'Activo') {
@@ -75,27 +100,17 @@ class AuthController extends Controller
                 ], 403);
             }
 
-            $token = $usuarioBuscado->createToken('usuario_token')->plainTextToken;
-            $usuarioBuscado->load(['grupo.carrera']);
-
-            $rolTexto = ($usuarioBuscado->Rol_ID === Rol::ADMIN) ? 'admin' : 'usuario';
-
-            $cookie = cookie('token', $token, 60 * 24 * 7, '/', null, false, true, false, 'Lax');
-
-            return response()->json([
-                'success' => true,
-                'es_nuevo' => false,
-                'message' => 'Bienvenido al Sistema Bibliotecario, ' . $usuarioBuscado->NombreUsuario,
-                'rol' => Crypt::encryptString($rolTexto),
-                'usuario' => $usuarioBuscado
-            ])->cookie($cookie);
+            return $this->crearRespuestaSesion(
+                $usuarioBuscado,
+                'Bienvenido al Sistema Bibliotecario, ' . $usuarioBuscado->NombreUsuario
+            );
 
         } catch (\Throwable $e) {
-        report($e);
-        return response()->json([
-            'success' => false,
-            'message' => 'Error de autenticación con el servicio institucional. Intenta de nuevo más tarde.'
-        ], 500);
+            report($e);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error de autenticación con el servicio institucional.'
+            ], 401);
         }
     }
 
@@ -104,48 +119,80 @@ class AuthController extends Controller
     // ================================================================
     public function completarRegistro(Request $request)
     {
+        $request->validate([
+            'registro_token'   => ['required', 'string', 'size:64'],
+            'matricula'        => ['required', 'string', 'max:30', 'unique:usuarios,Matricula'],
+            'telefono'         => ['required', 'string', 'max:20'],
+            'grupo_id'         => ['nullable', 'integer', 'exists:grupos,Grupo_ID'],
+            'apellido_materno' => ['nullable', 'string', 'max:50'],
+        ]);
+
         try {
-            $request->validate([
-                'correo' => 'required|email|unique:usuarios,CorreoElectronico',
-                'nombre' => 'required',
-                'matricula' => 'required|unique:usuarios,Matricula',
-                'telefono' => 'required',
-                'grupo_id' => 'nullable'
-            ]);
+            $datosRegistro = Cache::pull("registro-google:{$request->registro_token}");
+
+            if (!$datosRegistro) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'El proceso de registro expiró o no es válido. Inicia sesión con Google de nuevo.'
+                ], 403);
+            }
 
             $nuevoUsuario = new Usuario();
-            $nuevoUsuario->Rol_ID = Rol::USUARIO;
-            $nuevoUsuario->CorreoElectronico = $request->correo;
-            $nuevoUsuario->NombreUsuario = $request->nombre;
-            $nuevoUsuario->ApellidoPaterno = $request->apellido_paterno ?? '';
-            $nuevoUsuario->ApellidoMaterno = $request->apellido_materno ?? '';
-            $nuevoUsuario->Matricula = $request->matricula;
-            $nuevoUsuario->Telefono = $request->telefono;
-            $nuevoUsuario->Grupo_ID = $request->grupo_id ?: null; 
-            $nuevoUsuario->EstadoCuenta = 'Activo'; 
+            $nuevoUsuario->GoogleSub         = $datosRegistro['google_sub'];
+            $nuevoUsuario->Rol_ID            = Rol::USUARIO;
+            $nuevoUsuario->CorreoElectronico = $datosRegistro['correo'];
+            $nuevoUsuario->NombreUsuario     = $datosRegistro['nombre'];
+            $nuevoUsuario->ApellidoPaterno   = $datosRegistro['apellido_paterno'];
+            $nuevoUsuario->ApellidoMaterno   = $request->apellido_materno ?? '';
+            $nuevoUsuario->Matricula         = $request->matricula;
+            $nuevoUsuario->Telefono          = $request->telefono;
+            $nuevoUsuario->Grupo_ID          = $request->grupo_id ?: null;
+            $nuevoUsuario->EstadoCuenta      = 'Activo';
             $nuevoUsuario->save();
 
-            $token = $nuevoUsuario->createToken('usuario_token')->plainTextToken;
-            $nuevoUsuario->load(['grupo.carrera']);
-
-            $cookie = cookie('token', $token, 60 * 24 * 7, '/', null, false, true, false, 'Lax');
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Registro completado exitosamente.',
-                'rol' => Crypt::encryptString('usuario'), 
-                'usuario' => $nuevoUsuario
-            ])->cookie($cookie);
+            return $this->crearRespuestaSesion($nuevoUsuario, 'Registro completado exitosamente.');
 
         } catch (\Throwable $e) {
-        report($e);
-        return response()->json([
-            'success' => false,
-            'message' => 'Ocurrió un error al completar el registro. Intenta nuevamente.'
-        ], 500);
+            report($e);
+            return response()->json([
+                'success' => false,
+                'message' => 'Ocurrió un error al completar el registro. Intenta nuevamente.'
+            ], 500);
         }
     }
 
+    // ================================================================
+    // HELPER: CREACIÓN DE SESIÓN SEGURA Y COOKIE
+    // ================================================================
+    private function crearRespuestaSesion(Usuario $usuario, string $mensaje)
+    {
+        $token = $usuario->createToken('usuario_token')->plainTextToken;
+        $usuario->load(['grupo.carrera']);
+
+        $rolTexto = ($usuario->Rol_ID === Rol::ADMIN) ? 'admin' : 'usuario';
+        $isSecure = config('app.env') === 'production' || request()->isSecure();
+
+        $cookie = cookie(
+            'token',
+            $token,
+            60 * 24 * 7,
+            '/',
+            null,
+            $isSecure,
+            true,
+            false,
+            'Lax'
+        );
+
+        return response()->json([
+            'success' => true,
+            'es_nuevo' => false,
+            'message' => $mensaje,
+            'rol'     => Crypt::encryptString($rolTexto),
+            'usuario' => $usuario
+        ])->cookie($cookie);
+    }
+    
     // ================================================================
     // CIERRE DE SESIÓN SEGURO (Revocación de Token Sanctum)
     // ================================================================

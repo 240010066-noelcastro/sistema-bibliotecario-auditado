@@ -55,9 +55,13 @@ class LibroController extends Controller
 
             DB::commit();
             return response()->json(['success' => true], 201);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json([
+                'success' => false,
+                'message' => 'Ocurrió un error al registrar el libro en el catálogo.'
+            ], 500);
         }
     }
 
@@ -79,14 +83,13 @@ class LibroController extends Controller
             $autor = DB::table('autores')->whereRaw("TRIM(CONCAT(IFNULL(NombreAutor,''), ' ', IFNULL(ApellidosAutor,''))) = ?", [trim($request->input('Autor'))])->first();
             $editorial = DB::table('editoriales')->where('NombreEditorial', trim($request->input('Editorial')))->first();
 
-            // 🏛️ NUEVO PROCESAMIENTO RELACIONAL PARA LA ACTUALIZACIÓN
             $temaTexto = trim($request->input('TemaRecurso'));
             $temaRow = DB::table('temas_catalogo')->where('NombreTema', $temaTexto)->first();
             $temaId = $temaRow ? $temaRow->Tema_ID : null;
 
             $catalogo->update([
                 'Titulo' => $request->input('Titulo', 'Sin Título'),
-                'Tema_ID' => $temaId, // 🏛️ CORREGIDO
+                'Tema_ID' => $temaId,
                 'AnioPublicacion' => $request->input('AnioPublicacion'),
                 'Imagen_path' => $path,
                 'Observaciones' => $request->input('Observaciones'),
@@ -108,9 +111,13 @@ class LibroController extends Controller
 
             DB::commit();
             return response()->json(['success' => true], 200);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json([
+                'success' => false,
+                'message' => 'Ocurrió un error al actualizar los datos del libro.'
+            ], 500);
         }
     }
 
@@ -128,10 +135,14 @@ class LibroController extends Controller
             DB::statement('SET FOREIGN_KEY_CHECKS=1;');
             DB::commit();
             return response()->json(['success' => true], 200);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::statement('SET FOREIGN_KEY_CHECKS=1;');
             DB::rollBack();
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            report($e);
+            return response()->json([
+                'success' => false,
+                'message' => 'Ocurrió un error al eliminar el libro del inventario.'
+            ], 500);
         }
     }
 
@@ -145,17 +156,18 @@ class LibroController extends Controller
             $isbn = preg_replace('/[^0-9X]/i', '', $request->input('isbn', ''));
             $apiKey = config('services.google.books_api_key');
 
-            $response = Http::withoutVerifying()->timeout(8)->get('https://www.googleapis.com/books/v1/volumes', [
+            $response = Http::timeout(8)->get('https://www.googleapis.com/books/v1/volumes', [
                 'q'   => 'isbn:' . $isbn,
                 'key' => $apiKey,
             ]);
 
             return response()->json($response->json(), $response->status());
         } catch (\Throwable $e) {
+            report($e);
             return response()->json([
                 'success' => false,
-                'message' => 'Error al consultar Google Books desde el servidor: ' . $e->getMessage()
-            ], 500);
+                'message' => 'No fue posible consultar el servicio bibliográfico.'
+            ], 502);
         }
     }
 }
