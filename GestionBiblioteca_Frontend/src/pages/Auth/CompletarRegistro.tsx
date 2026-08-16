@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { IonContent, IonPage, IonIcon } from '@ionic/react';
-import { libraryOutline, cardOutline, callOutline, peopleOutline, arrowBackOutline } from 'ionicons/icons';
+import { libraryOutline, cardOutline, callOutline, peopleOutline, schoolOutline, arrowBackOutline } from 'ionicons/icons';
 // @ts-ignore
 import api from '../../services/api';
 import './CompletarRegistro.css'; 
@@ -8,6 +8,7 @@ import './CompletarRegistro.css';
 const CompletarRegistro: React.FC = () => {
   const [matricula, setMatricula] = useState('');
   const [telefono, setTelefono] = useState('');
+  const [carreraSeleccionada, setCarreraSeleccionada] = useState(''); 
   const [grupoId, setGrupoId] = useState(''); 
   
   const [loading, setLoading] = useState(false);
@@ -15,6 +16,27 @@ const CompletarRegistro: React.FC = () => {
   const [tokenValido, setTokenValido] = useState(false);
   
   const [grupos, setGrupos] = useState<any[]>([]); 
+
+  // Extrae la lista única de carreras a partir de los grupos
+  const carrerasDisponibles = Array.from(
+    new Map(
+      grupos
+        .filter((g: any) => g.Carrera_ID || g.carrera?.Carrera_ID)
+        .map((g: any) => [
+          g.Carrera_ID || g.carrera?.Carrera_ID,
+          {
+            id: String(g.Carrera_ID || g.carrera?.Carrera_ID),
+            nombre: g.NombreCarrera || g.carrera?.NombreCarrera || g.carrera?.Nombre || `Carrera ${g.Carrera_ID}`
+          }
+        ])
+    ).values()
+  );
+
+  // Filtra los grupos según la carrera elegida
+  const gruposFiltrados = grupos.filter((g: any) => {
+    const cId = String(g.Carrera_ID || g.carrera?.Carrera_ID);
+    return cId === carreraSeleccionada;
+  });
 
   useEffect(() => {
     const registroToken = sessionStorage.getItem('registro_token');
@@ -49,12 +71,21 @@ const CompletarRegistro: React.FC = () => {
     e.preventDefault();
     setErrorMsg('');
 
-    if (!matricula || !telefono) {
-    return setErrorMsg('Por favor, ingresa tu matrícula/núm. empleado y teléfono.');
+    if (!matricula.trim() || !telefono.trim()) {
+      return setErrorMsg('Por favor, ingresa tu matrícula/núm. empleado y teléfono.');
     }
 
     if (telefono.length !== 10) {
-    return setErrorMsg('El número de teléfono debe tener exactamente 10 dígitos.');
+      return setErrorMsg('El número de teléfono debe tener exactamente 10 dígitos.');
+    }
+
+    if (!carreraSeleccionada) {
+      return setErrorMsg('Por favor, selecciona tu carrera o tu perfil institucional.');
+    }
+
+    // Obligatorio para estudiantes
+    if (carreraSeleccionada !== 'docente' && !grupoId) {
+      return setErrorMsg('Por favor, selecciona el grupo al que perteneces.');
     }
 
     const registroToken = sessionStorage.getItem('registro_token');
@@ -70,7 +101,7 @@ const CompletarRegistro: React.FC = () => {
         registro_token: registroToken,
         matricula: matricula.trim(),
         telefono: telefono.trim(),
-        grupo_id: grupoId ? parseInt(grupoId, 10) : null
+        grupo_id: carreraSeleccionada === 'docente' ? null : parseInt(grupoId, 10)
       };
 
       const response = await api.post('/completar-registro', payload);
@@ -176,24 +207,51 @@ const CompletarRegistro: React.FC = () => {
                   </div>
                 </div>
 
+                {/* SELECTOR DE CARRERA / PERFIL */}
                 <div className="registro-input-group">
-                  <label>Grupo / Carrera</label>
+                  <label>Carrera / Perfil Institucional *</label>
                   <div className="registro-input-wrapper">
-                    <IonIcon icon={peopleOutline} className="registro-field-icon" />
+                    <IonIcon icon={schoolOutline} className="registro-field-icon" />
                     <select 
-                      value={grupoId}
-                      onChange={(e) => setGrupoId(e.target.value)}
+                      value={carreraSeleccionada}
+                      onChange={(e) => {
+                        setCarreraSeleccionada(e.target.value);
+                        setGrupoId(''); 
+                      }}
                       disabled={loading}
                     >
-                      <option value="">Ninguno (Docente / Personal / Sin grupo)</option>
-                      {grupos.map((grupo: any) => (
-                        <option key={grupo.Grupo_ID || grupo.id} value={grupo.Grupo_ID || grupo.id}>
-                          {grupo.NombreGrupo || grupo.Nombre || grupo.nombre || `Grupo ${grupo.Grupo_ID || grupo.id}`}
+                      <option value="">Selecciona tu carrera o perfil...</option>
+                      {carrerasDisponibles.map((carrera: any) => (
+                        <option key={carrera.id} value={carrera.id}>
+                          {carrera.nombre}
                         </option>
                       ))}
+                      <option value="docente">Personal Docente / Administrativo</option>
                     </select>
                   </div>
                 </div>
+
+                {/* SELECTOR DE GRUPO (Solo si es estudiante con carrera seleccionada) */}
+                {carreraSeleccionada && carreraSeleccionada !== 'docente' && (
+                  <div className="registro-input-group">
+                    <label>Grupo Asignado *</label>
+                    <div className="registro-input-wrapper">
+                      <IonIcon icon={peopleOutline} className="registro-field-icon" />
+                      <select 
+                        value={grupoId}
+                        onChange={(e) => setGrupoId(e.target.value)}
+                        disabled={loading}
+                      >
+                        <option value="">Selecciona tu grupo...</option>
+                        {gruposFiltrados.map((grupo: any) => (
+                          <option key={grupo.Grupo_ID || grupo.id} value={grupo.Grupo_ID || grupo.id}>
+                            {grupo.NombreGrupo || grupo.Nombre || grupo.nombre || `Grupo ${grupo.Grupo_ID || grupo.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
 
                 <button type="submit" className="btn-registro-submit" disabled={loading}>
                   {loading ? 'Finalizando Registro...' : 'Finalizar Registro'}

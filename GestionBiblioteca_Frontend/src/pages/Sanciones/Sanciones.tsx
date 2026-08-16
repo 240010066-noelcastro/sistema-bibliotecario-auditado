@@ -539,7 +539,7 @@ const Sanciones: React.FC = () => {
                    }}
                   disabled={isProcessing || isInitialLoading}
                 >
-                  <option value="Todos">Bajas: Mostrar Todo</option>
+                  <option value="Todos">Mostrar Todo</option>
                   <option value="Si">Solo Dados de Baja</option>
                   <option value="No">Sin Baja</option>
                 </select>

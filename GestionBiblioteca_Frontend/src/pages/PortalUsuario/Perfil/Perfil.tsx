@@ -204,7 +204,7 @@ const Perfil: React.FC = () => {
               </div>
               <IonLabel>
                 <p>Carrera / División</p>
-                <h4>{usuario?.grupo?.carrera?.NombreCarrera || 'Ingeniería en Tecnologías de la Información'}</h4>
+                <h4>{usuario?.grupo?.carrera?.NombreCarrera || 'Sin carrera asignada'}</h4>
               </IonLabel>
             </IonItem>
 
