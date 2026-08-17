@@ -71,10 +71,10 @@ Route::apiResource('grupos', GrupoController::class);
 Route::apiResource('inventario', InventarioUnidadController::class);
 Route::apiResource('pagos-sanciones', PagoSancionController::class);
 Route::apiResource('prestamos', PrestamoController::class);
-Route::apiResource('recursos', RecursoCatalogoController::class);
+Route::apiResource('recursos', RecursoCatalogoController::class)->except(['show']);
 Route::apiResource('sanciones', SancionController::class);
 Route::apiResource('tipos-recursos', TipoRecursoController::class);
-Route::apiResource('catalogo', RecursoCatalogoController::class)->except(['index']);
+Route::apiResource('catalogo', RecursoCatalogoController::class)->except(['index', 'show']);
 Route::apiResource('libros', LibroController::class);
 Route::apiResource('tesis', TesisController::class);
 Route::apiResource('revistas', RevistaController::class);
@@ -93,8 +93,11 @@ Route::post('/configuraciones', [ConfiguracionSistemaController::class, 'storeOr
 // 3. RUTAS PRIVADAS DEL PORTAL DE USUARIO (DESACOPLADAS)
 // ==========================================================
 Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
+    Route::get('/configuraciones/{modulo}', [ConfiguracionSistemaController::class, 'getPublica']);
     Route::get('/configuraciones/publicas/{modulo}', [ConfiguracionSistemaController::class, 'getPublica']); 
     Route::get('/catalogo', [RecursoCatalogoController::class, 'index']);
+    Route::get('/catalogo/{id}', [RecursoCatalogoController::class, 'getRecursoDetalle']);
+    Route::get('/recursos/{id}', [RecursoCatalogoController::class, 'getRecursoDetalle']);
     Route::get('/temas/buscar', [App\Http\Controllers\TemaController::class, 'buscar']); 
     Route::get('/buscar', [RecursoCatalogoController::class, 'index']);
     Route::get('usuario/dashboard-stats', [InicioController::class, 'getStats']);
