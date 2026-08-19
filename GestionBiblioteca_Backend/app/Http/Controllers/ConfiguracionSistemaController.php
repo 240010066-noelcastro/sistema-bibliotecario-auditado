@@ -12,7 +12,9 @@ class ConfiguracionSistemaController extends Controller
         'Catalogo',
         'Prestamos',
         'Sanciones',
-        'Inventario'
+        'Inventario',
+        'Autores',
+        'Editoriales'
     ];
 
     // ==========================================================
