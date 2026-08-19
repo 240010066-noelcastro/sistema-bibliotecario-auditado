@@ -142,6 +142,7 @@ class SancionController extends Controller
 
             // 🏛️ MAPEAR ACCIÓN RAÍZ HEREDADA
             $estadoSancionLogico = $this->getLogicaRaiz('Sanciones', 'estados_sancion', $validated['EstadoSancion']);
+            $darDeBaja = !empty($request->input('DarDeBaja'));
 
             $sancion = Sancion::create([
                 'Usuario_ID'           => $validated['Usuario_ID'],
@@ -158,7 +159,7 @@ class SancionController extends Controller
             if (!empty($validated['DetallesPrestamo_ID'])) {
                 $detalle = DB::table('detalles_prestamo')->where('DetallesPrestamo_ID', $validated['DetallesPrestamo_ID'])->first();
                 if ($detalle) {
-                    if (!empty($validated['DarDeBaja'])) {
+                    if ($darDeBaja) {
                         $estadoFisico = ($validated['TipoSancion'] === 'Material Extraviado') ? 'Extraviado' : 'Malo / Dañado';
 
                         DB::table('inventario_unidades')
@@ -166,7 +167,7 @@ class SancionController extends Controller
                             ->update([
                                 'EstadoDisponibilidad'        => $this->getVisualPorDefecto('Inventario', 'Baja', 'Baja'), 
                                 'EstadoDisponibilidad_Logico' => 'Baja', 
-                                'EstadoFisicoInicial'          => $estadoFisico,
+                                'EstadoFisicoInicial'         => $estadoFisico,
                                 'updated_at'                  => now()
                             ]);
 
@@ -177,7 +178,7 @@ class SancionController extends Controller
                                 'EstadoPrestamo_Logico' => 'Finalizado (Sanción)', 
                                 'updated_at'            => now()
                             ]);
-                    } else if (in_array($estadoSancionLogico, ['Pagado', 'Condonado'])) {
+                    } elseif (in_array($estadoSancionLogico, ['Pagado', 'Condonado'])) {
                         DB::table('prestamos')
                             ->where('Prestamo_ID', $detalle->Prestamo_ID)
                             ->update([
@@ -191,6 +192,22 @@ class SancionController extends Controller
                             ->update([
                                 'EstadoDisponibilidad'        => $this->getVisualPorDefecto('Inventario', 'Disponible', 'Disponible'), 
                                 'EstadoDisponibilidad_Logico' => 'Disponible', 
+                                'updated_at'                  => now()
+                            ]);
+                    } else {
+                        DB::table('prestamos')
+                            ->where('Prestamo_ID', $detalle->Prestamo_ID)
+                            ->update([
+                                'EstadoPrestamo'        => $this->getVisualPorDefecto('Prestamos', 'Atrasado', 'Atrasado'), 
+                                'EstadoPrestamo_Logico' => 'Atrasado', 
+                                'updated_at'            => now()
+                            ]);
+
+                        DB::table('inventario_unidades')
+                            ->where('Unidad_ID', $detalle->Unidad_ID)
+                            ->update([
+                                'EstadoDisponibilidad'        => $this->getVisualPorDefecto('Inventario', 'Prestado', 'Prestado'), 
+                                'EstadoDisponibilidad_Logico' => 'Prestado', 
                                 'updated_at'                  => now()
                             ]);
                     }
@@ -235,57 +252,41 @@ class SancionController extends Controller
             if (!empty($validated['DetallesPrestamo_ID'])) {
                 $detalle = DB::table('detalles_prestamo')->where('DetallesPrestamo_ID', $validated['DetallesPrestamo_ID'])->first();
                 if ($detalle) {
-                    $unidad = DB::table('inventario_unidades')->where('Unidad_ID', $detalle->Unidad_ID)->first();
-                    
-                    if ($unidad) {
-                        // 1. SINCRONIZAR EL ESTADO DEL PRÉSTAMO
-                        if ($unidad->EstadoDisponibilidad_Logico === 'Baja') {
+                    if (in_array($estadoSancionLogico, ['Pagado', 'Condonado'])) {
+                        DB::table('prestamos')
+                            ->where('Prestamo_ID', $detalle->Prestamo_ID)
+                            ->update([
+                                'EstadoPrestamo'        => $this->getVisualPorDefecto('Prestamos', 'Devuelto', 'Devuelto'), 
+                                'EstadoPrestamo_Logico' => 'Devuelto', 
+                                'updated_at'            => now()
+                            ]);
+
+                        DB::table('inventario_unidades')
+                            ->where('Unidad_ID', $detalle->Unidad_ID)
+                            ->update([
+                                'EstadoDisponibilidad'        => $this->getVisualPorDefecto('Inventario', 'Disponible', 'Disponible'), 
+                                'EstadoDisponibilidad_Logico' => 'Disponible', 
+                                'updated_at'                  => now()
+                            ]);
+                    } elseif ($estadoSancionLogico === 'Pendiente') {
+                        $unidadActual = DB::table('inventario_unidades')->where('Unidad_ID', $detalle->Unidad_ID)->first();
+                        
+                        if ($unidadActual && $unidadActual->EstadoDisponibilidad_Logico !== 'Baja') {
                             DB::table('prestamos')
                                 ->where('Prestamo_ID', $detalle->Prestamo_ID)
                                 ->update([
-                                    'EstadoPrestamo'        => $this->getVisualPorDefecto('Prestamos', 'Finalizado (Sanción)', 'Finalizado (Sanción)'), 
-                                    'EstadoPrestamo_Logico' => 'Finalizado (Sanción)', 
+                                    'EstadoPrestamo'        => $this->getVisualPorDefecto('Prestamos', 'Atrasado', 'Atrasado'), 
+                                    'EstadoPrestamo_Logico' => 'Atrasado', 
                                     'updated_at'            => now()
                                 ]);
-                        } else {
-                            if (in_array($estadoSancionLogico, ['Pagado', 'Condonado'])) {
-                                DB::table('prestamos')
-                                    ->where('Prestamo_ID', $detalle->Prestamo_ID)
-                                    ->update([
-                                        'EstadoPrestamo'        => $this->getVisualPorDefecto('Prestamos', 'Devuelto', 'Devuelto'), 
-                                        'EstadoPrestamo_Logico' => 'Devuelto', 
-                                        'updated_at'            => now()
-                                    ]);
-                            } else if ($estadoSancionLogico === 'Pendiente') {
-                                DB::table('prestamos')
-                                    ->where('Prestamo_ID', $detalle->Prestamo_ID)
-                                    ->update([
-                                        'EstadoPrestamo'        => $this->getVisualPorDefecto('Prestamos', 'Atrasado', 'Atrasado'), 
-                                        'EstadoPrestamo_Logico' => 'Atrasado', 
-                                        'updated_at'            => now()
-                                    ]);
-                            }
-                        }
 
-                        // 2. LA REVERSA: SINCRONIZAR EL INVENTARIO
-                        if ($unidad->EstadoDisponibilidad_Logico !== 'Baja') {
-                            if (in_array($estadoSancionLogico, ['Pagado', 'Condonado'])) {
-                                DB::table('inventario_unidades')
-                                    ->where('Unidad_ID', $detalle->Unidad_ID)
-                                    ->update([
-                                        'EstadoDisponibilidad'        => $this->getVisualPorDefecto('Inventario', 'Disponible', 'Disponible'), 
-                                        'EstadoDisponibilidad_Logico' => 'Disponible', 
-                                        'updated_at'                  => now()
-                                    ]);
-                            } else if ($estadoSancionLogico === 'Pendiente') {
-                                DB::table('inventario_unidades')
-                                    ->where('Unidad_ID', $detalle->Unidad_ID)
-                                    ->update([
-                                        'EstadoDisponibilidad'        => $this->getVisualPorDefecto('Inventario', 'Prestado', 'Prestado'), 
-                                        'EstadoDisponibilidad_Logico' => 'Prestado', 
-                                        'updated_at'                  => now()
-                                    ]);
-                            }
+                            DB::table('inventario_unidades')
+                                ->where('Unidad_ID', $detalle->Unidad_ID)
+                                ->update([
+                                    'EstadoDisponibilidad'        => $this->getVisualPorDefecto('Inventario', 'Prestado', 'Prestado'), 
+                                    'EstadoDisponibilidad_Logico' => 'Prestado', 
+                                    'updated_at'                  => now()
+                                ]);
                         }
                     }
                 }
